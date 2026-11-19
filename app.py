@@ -6703,6 +6703,53 @@ async def get_status(job_id: str, request: Request):
     }
 
 
+@app.get("/api/local/projects")
+async def list_local_projects():
+    """Self-host only: every job folder in OUTPUT_DIR, newest first, for the
+    dashboard's History tab. Cloud has its own library (cloud/videos.py)."""
+    if BILLING_ENABLED:
+        raise HTTPException(status_code=404, detail="Not found")
+    if any(glob.glob(os.path.join(OUTPUT_DIR, j, "*_metadata.json"))
+           for j in os.listdir(OUTPUT_DIR) if j not in jobs):
+        _recover_jobs_from_disk()
+    projects = []
+    for job_id in os.listdir(OUTPUT_DIR):
+        job_path = os.path.join(OUTPUT_DIR, job_id)
+        if (job_id == os.path.basename(THUMBNAILS_DIR) or _not_a_job_dir(job_id)
+                or not os.path.isdir(job_path) or not _JOB_ID_RE.match(job_id)):
+            continue
+        job = jobs.get(job_id) or {}
+        result = job.get('result') if isinstance(job.get('result'), dict) else {}
+        title = None
+        meta = glob.glob(os.path.join(job_path, "*_metadata.json"))
+        if meta:
+            try:
+                with open(meta[0], 'r') as f:
+                    src = json.load(f).get('source_video') or ''
+                title = os.path.splitext(os.path.basename(src))[0].replace('_', ' ').strip() or None
+            except Exception:
+                pass
+        status = job.get('status') or ('completed' if meta else 'failed')
+        clips = [
+            {"index": i, "title": c.get('title'), "video_url": c.get('video_url')}
+            for i, c in enumerate(result.get('clips') or [])
+            if isinstance(c, dict) and c.get('video_url')
+        ]
+        try:
+            created = os.path.getctime(job_path)
+        except OSError:
+            created = 0
+        projects.append({
+            "job_id": job_id,
+            "title": title or "Untitled project",
+            "status": status,
+            "created_at": datetime.fromtimestamp(created, timezone.utc).isoformat() if created else None,
+            "clips": clips,
+        })
+    projects.sort(key=lambda p: p["created_at"] or "", reverse=True)
+    return {"projects": projects}
+
+
 def _locate_source(job_id: str):
     """Find a job's source video on disk, or None.
 

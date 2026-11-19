@@ -20,7 +20,9 @@ export default function SiteNav({ className = '' }) {
   const signedIn = isSignedIn || (loading && hasStoredSession());
   // Self-hosted (no billing) has no accounts to sign in to.
   const showLogin = loading || billingEnabled;
-  const html = useMemo(() => renderNav({ signedIn, showLogin }), [signedIn, showLogin]);
+  // Self-hosted: the CTA is just the way into your own dashboard.
+  const ctaLabel = !loading && !billingEnabled ? 'Dashboard' : null;
+  const html = useMemo(() => renderNav({ signedIn, showLogin, ctaLabel }), [signedIn, showLogin, ctaLabel]);
   const ref = useRef(null);
   useEffect(() => wireNav(ref.current?.querySelector('[data-osn]')), [html]);
   return (

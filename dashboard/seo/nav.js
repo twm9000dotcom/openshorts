@@ -115,7 +115,7 @@ const BURGER = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stro
 
 /* The header markup. `signedIn` is only ever true in the React landing, which
  * knows the session; static HTML always renders the signed-out variant. */
-export function renderNav({ lang = 'en', signedIn = false, showLogin = true } = {}) {
+export function renderNav({ lang = 'en', signedIn = false, showLogin = true, ctaLabel = null } = {}) {
   const t = NAV_STRINGS[lang] || NAV_STRINGS.en
   const groups = NAV_GROUPS.map((g) => {
     const items = g.items
@@ -137,7 +137,7 @@ export function renderNav({ lang = 'en', signedIn = false, showLogin = true } = 
     <ul class="osn-list">${groups}${links}<li class="osn-item"><a class="osn-top osn-gh" href="${REPO_URL}" rel="noopener" aria-label="${esc(t.github)}" title="GitHub">${GITHUB}<span class="osn-gh-label">GitHub</span></a></li></ul>
     ${login}
   </nav>
-  <a class="osn-cta" href="${APP_HREF}"${signedIn ? '' : ` title="${esc(t.ctaHint)}"`}>${esc(signedIn ? t.openApp : t.cta)}</a>
+  <a class="osn-cta" href="${APP_HREF}"${signedIn || ctaLabel ? '' : ` title="${esc(t.ctaHint)}"`}>${esc(ctaLabel || (signedIn ? t.openApp : t.cta))}</a>
 </div>
 </header>`
 }

@@ -26,6 +26,7 @@ import LoginModal from './components/LoginModal';
 import TrialGate from './components/TrialGate';
 import AdvancedBanner from './components/AdvancedBanner';
 import HistoryTab from './components/HistoryTab';
+import LocalHistoryTab from './components/LocalHistoryTab';
 import AutopilotTab from './components/AutopilotTab';
 import ProfileMenu from './components/ProfileMenu';
 import Modal from './components/ui/Modal';
@@ -679,6 +680,31 @@ function App() {
       if (!ok || jobIdRef.current !== data.job_id) return;
       setNoSource(false);
       setProcessingMedia({ type: 'server', payload: `/api/source/${data.job_id}` });
+    });
+  };
+
+  // Self-host: open a finished job from the local History tab. The job folder
+  // is still on disk, so its status already carries the full result.
+  const openLocalProject = async (projectJobId) => {
+    const data = await apiJson(`/api/status/${projectJobId}`);
+    if (data.status !== 'completed' || !data.result) {
+      throw new Error('This project has no finished clips to open.');
+    }
+    flushClipState();
+    setProjectState(null);
+    setNoSource(true);
+    setJobId(projectJobId);
+    setResults(data.result);
+    setLogs(['♻️ Project opened from History.']);
+    setLogTimes([Date.now() / 1000]);
+    setProcessingMedia(null);
+    setQualityGate(null);
+    setStatus('complete');
+    setActiveTab('dashboard');
+    sourcePlayable(projectJobId).then((ok) => {
+      if (!ok || jobIdRef.current !== projectJobId) return;
+      setNoSource(false);
+      setProcessingMedia({ type: 'server', payload: `/api/source/${projectJobId}` });
     });
   };
 
@@ -1445,7 +1471,7 @@ function App() {
     { id: 'ai-agent', ord: '04', icon: Bot, label: 'AI Agent', short: 'agent', byok: true },
     { id: 'ugc-gallery', ord: '05', icon: LayoutGrid, label: 'UGC Gallery', short: 'gallery', primary: true },
     { id: 'thumbnails', ord: '06', icon: Image, label: 'YouTube Studio', short: 'studio', primary: true },
-    ...(billingEnabled && isSignedIn ? [{ id: 'history', ord: '07', icon: History, label: 'History', short: 'history' }] : []),
+    ...((billingEnabled && isSignedIn) || !billingEnabled ? [{ id: 'history', ord: '07', icon: History, label: 'History', short: 'history' }] : []),
     { id: 'settings', ord: '08', icon: Settings, label: 'Settings', short: 'settings' },
   ];
   const activeNav = navItems.find((n) => n.id === activeTab);
@@ -2222,6 +2248,8 @@ function App() {
                     </p>
                     <button onClick={() => setShowLogin(true)} className="btn-primary">sign in</button>
                   </div>
+                ) : !billingEnabled ? (
+                  <LocalHistoryTab onOpenProject={openLocalProject} />
                 ) : (
                   <HistoryTab onReopenProject={restoreProject} />
                 )}
