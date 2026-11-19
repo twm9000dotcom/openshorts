@@ -243,6 +243,10 @@ def apply_crop_overrides(xs, strategies, scene_boundaries, overrides,
             def point(half):
                 if isinstance(half, dict):
                     fx, fy = float(half['x']), float(half.get('y', 0.5))
+                    # Optional hand-sized box: crop width as a fraction of the
+                    # source width (split_geometry's third element).
+                    if half.get('w') is not None:
+                        return (fx * orig_w, fy * orig_h, float(half['w']) * orig_w)
                 else:
                     fx, fy = float(half), 0.5
                 return (fx * orig_w, fy * orig_h)

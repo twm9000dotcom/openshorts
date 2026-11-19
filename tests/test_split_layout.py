@@ -133,3 +133,20 @@ class TestSplitFiltergraph:
     def test_both_halves_scale_to_the_same_size(self):
         graph = split_filtergraph(1920, 1080, 1080, 1920, (600, 400), (1400, 400))
         assert graph.count("scale=1080:960") == 2
+
+
+def test_hand_sized_box_is_exact_and_centred():
+    # A third element is the crop width the reframe editor drew: the box is
+    # that size, locked to the half's aspect, centred on the point.
+    w, h, x, y, half_h = split_geometry(1920, 1080, 1080, 1920, (600, 400, 800))
+    assert w == 800 and half_h == 960
+    assert abs(w / h - 1080 / 960) < 0.01
+    assert abs((x + w / 2) - 600) <= 2 and abs((y + h / 2) - 400) <= 2
+
+
+def test_hand_sized_box_is_clamped_inside_the_frame():
+    w, h, x, y, _ = split_geometry(1920, 1080, 1080, 1920, (1900, 1070, 800))
+    assert x + w <= 1920 and y + h <= 1080 and x >= 0 and y >= 0
+    # Larger than the source height allows: shrinks to fit, keeps the aspect.
+    w, h, x, y, _ = split_geometry(1920, 1080, 1080, 1920, (960, 540, 5000))
+    assert h <= 1080 and w <= 1920 and abs(w / h - 1080 / 960) < 0.01

@@ -155,11 +155,27 @@ def split_geometry(orig_w, orig_h, out_w, out_h, centre):
     half_h -= half_h % 2
     aspect = out_w / float(half_h)
 
-    crop_h = int(round(orig_h * max(0.3, min(SPLIT_TIGHTNESS, 1.0))))
-    crop_w = int(round(crop_h * aspect))
-    if crop_w > orig_w:
-        crop_w = orig_w
+    # A third element is a hand-sized box from the reframe editor: its crop
+    # WIDTH in source pixels. Then the box is exactly what the user drew
+    # (centred on the point, no headroom bias); otherwise the automatic size.
+    manual_w = None
+    if len(centre) > 2 and centre[2]:
+        try:
+            manual_w = float(centre[2])
+        except (TypeError, ValueError):
+            manual_w = None
+    if manual_w and manual_w > 0:
+        crop_w = int(round(max(32.0, min(manual_w, float(orig_w)))))
         crop_h = int(round(crop_w / aspect))
+        if crop_h > orig_h:
+            crop_h = orig_h
+            crop_w = int(round(crop_h * aspect))
+    else:
+        crop_h = int(round(orig_h * max(0.3, min(SPLIT_TIGHTNESS, 1.0))))
+        crop_w = int(round(crop_h * aspect))
+        if crop_w > orig_w:
+            crop_w = orig_w
+            crop_h = int(round(crop_w / aspect))
 
     crop_w -= crop_w % 2
     crop_h -= crop_h % 2
@@ -168,10 +184,13 @@ def split_geometry(orig_w, orig_h, out_w, out_h, centre):
     x = int(round(cx - crop_w / 2.0))
     x = max(0, min(x, orig_w - crop_w))
 
-    # Faces sit high in a frame, so centring the crop on the face centre buries
-    # the speaker's chin at the bottom edge when the crop is shorter than the
-    # source. Bias the box down a little to keep headroom natural.
-    y = int(round(cy - crop_h * 0.42))
+    if manual_w:
+        y = int(round(cy - crop_h / 2.0))
+    else:
+        # Faces sit high in a frame, so centring the crop on the face centre
+        # buries the speaker's chin at the bottom edge when the crop is shorter
+        # than the source. Bias the box down a little to keep headroom natural.
+        y = int(round(cy - crop_h * 0.42))
     y = max(0, min(y, orig_h - crop_h))
 
     return crop_w, crop_h, x - (x % 2), y - (y % 2), half_h

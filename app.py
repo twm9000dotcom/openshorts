@@ -8207,6 +8207,17 @@ async def get_clip_scenes(job_id: str, clip_index: int, request: Request):
         preview_name = f"temp_preview_{clip_index}.mp4"
         preview_path = os.path.join(output_dir, preview_name)
         work_path = _clip_scene_workfile(source_path, segments, output_dir, work_token)
+        # The render trims the source's burned-in subtitle band off the bottom
+        # BEFORE it reads the overrides (main.render_clip), so the box
+        # fractions are fractions of the trimmed frame. Show the editor that
+        # same frame, or every box lands lower and taller than it was drawn —
+        # and scene detection runs on the same pixels as the render's does.
+        band = data.get('source_subtitle_band')
+        if band:
+            trimmed = m.trim_subtitle_band(work_path, band)
+            if trimmed != work_path:
+                os.remove(work_path)
+                work_path = trimmed
         try:
             scenes, fps = m.detect_scenes(work_path)
             fps = float(fps) or 30.0
@@ -8301,6 +8312,9 @@ async def get_clip_scenes(job_id: str, clip_index: int, request: Request):
         "source_width": orig_w,
         "source_height": orig_h,
         "crop_width_fraction": round(crop_w / orig_w, 4),
+        # Width / height of ONE half of a split stack (9:8 for 9:16 output,
+        # 2:1 for square): the editor locks its two boxes to this shape.
+        "split_half_aspect": round(2.0 * aspect, 4),
         "preview_url": f"/videos/{job_id}/{preview_name}",
         "saved_overrides": saved_overrides,
         "scenes": scenes_out,
@@ -8333,7 +8347,11 @@ async def reframe_clip(req: ReframeRequest, request: Request):
             if isinstance(value, dict):
                 def _half(h):
                     if isinstance(h, dict):
-                        return {"x": _fraction(h["x"]), "y": _fraction(h.get("y", 0.5))}
+                        half = {"x": _fraction(h["x"]), "y": _fraction(h.get("y", 0.5))}
+                        if h.get("w") is not None:
+                            # Hand-sized box (crop width / source width).
+                            half["w"] = min(1.0, max(0.05, float(h["w"])))
+                        return half
                     return {"x": _fraction(h), "y": 0.5}
                 overrides[idx] = {"top": _half(value["top"]),
                                   "bottom": _half(value["bottom"])}
