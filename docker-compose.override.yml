@@ -1,0 +1,21 @@
+services:
+  backend:
+    build:
+      context: .
+      args:
+        GPU: "1"
+    # Run as the host user: the repo is bind-mounted over /app, so the image's
+    # appuser (uid 999) can't write uploads/, output/ or the model cache.
+    user: "1000:1000"
+    environment:
+      - HOME=/app
+      - USER=openshorts
+      - LOGNAME=openshorts
+      - YOLO_CONFIG_DIR=/app/.config/Ultralytics
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, video]
