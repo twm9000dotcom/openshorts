@@ -3,6 +3,7 @@ import { Link2, Upload, FileVideo, X, Info, Loader2, ChevronDown } from 'lucide-
 import { track } from '../lib/analytics';
 import { getApiUrl } from '../config';
 import SourceCost from './SourceCost';
+import SelfHostRange from './SelfHostRange';
 import { useAuth } from '../contexts/AuthContext';
 import { FREE_CLIPS_PER_VIDEO, FREE_CLIPS_QUIET, MAX_CLIPS_PER_VIDEO } from '../lib/clipProgress';
 
@@ -33,7 +34,7 @@ const readVideoDuration = (file) => new Promise((resolve) => {
 });
 
 export default function MediaInput({ onProcess, isProcessing }) {
-    const { plan } = useAuth();
+    const { plan, billingEnabled } = useAuth();
     const [youtubeUrlEnabled, setYoutubeUrlEnabled] = useState(true);
     // File upload is the primary path; the link is secondary.
     const [mode, setMode] = useState('file'); // 'file' | 'url'
@@ -123,6 +124,8 @@ export default function MediaInput({ onProcess, isProcessing }) {
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!acknowledged) return;
+        // Self-host range picker open with missing or bad times.
+        if (range?.invalid) return;
         const advanced = {
             targetClips: targetClips || null,
             clipMinSeconds: clipMinSeconds || null,
@@ -262,13 +265,17 @@ export default function MediaInput({ onProcess, isProcessing }) {
                     </div>
                 )}
 
-                <SourceCost
-                    mode={mode}
-                    url={url}
-                    fileSeconds={fileSeconds}
-                    range={range}
-                    onRangeChange={setRange}
-                />
+                {billingEnabled ? (
+                    <SourceCost
+                        mode={mode}
+                        url={url}
+                        fileSeconds={fileSeconds}
+                        range={range}
+                        onRangeChange={setRange}
+                    />
+                ) : (
+                    <SelfHostRange mode={mode} url={url} onRangeChange={setRange} />
+                )}
 
                 {/* Output format selector */}
                 <div className="mt-5" data-tutorial="output-format">

@@ -910,6 +910,12 @@ def download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
 
 
 
+def _clock(seconds):
+    """Seconds as h:mm:ss for log lines."""
+    s = int(max(0, seconds))
+    return f"{s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}"
+
+
 def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
                             cap_minutes=None, route_out=None):
     """
@@ -1071,6 +1077,19 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
                 pass
             break
 
+    # Self-host range picker (SOURCE_RANGE_SECTION=1, set by app.py): fetch
+    # ONLY the picked stretch, not 0..end. The cut is then already made, so a
+    # .range stamp tells cap_source_duration to leave the file alone.
+    _section = None
+    if os.environ.get("SOURCE_RANGE_SECTION", "").strip() == "1":
+        try:
+            _sec_start = max(0.0, float(os.environ.get("SOURCE_START_SECONDS", "0") or 0))
+            _sec_len = float(os.environ.get("MAX_SOURCE_MINUTES", "") or 0) * 60.0
+            if _sec_len > 0:
+                _section = (_sec_start, _sec_start + _sec_len)
+        except ValueError:
+            _section = None
+
     def _early_audio(info, extractor_args, proxy, cookies):
         """Fetch the audio track alone and hand it to on_audio (background)."""
         import copy
@@ -1120,7 +1139,9 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
         # on a 19-min cap took 8 min ranged against ~30 s whole (prod,
         # 25-sep-2026); a finished 6.7 h livestream is ~13 GB whole.
         ranged = False
-        if _range_cap:
+        if _section:
+            ranged = True
+        elif _range_cap:
             _dur = info.get('duration')
             ranged = not _dur or float(_dur) > max(3 * _range_cap, _range_cap + 2700)
         # Once per download, and not on the per-GB proxy (that is paid bytes,
@@ -1144,8 +1165,14 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
         _dl_bytes["ranged"] = ranged
         if ranged:
             from yt_dlp.utils import download_range_func
-            dl_opts['download_ranges'] = download_range_func(None, [(0, _range_cap)])
-            print(f"✂️ Source is {'of unknown length' if not info.get('duration') else 'longer than the paid minutes'}"
+            if _section:
+                dl_opts['download_ranges'] = download_range_func(None, [_section])
+                print(f"✂️ Downloading only the picked section: "
+                      f"{_clock(_section[0])} → {_clock(_section[1])}.")
+            else:
+                dl_opts['download_ranges'] = download_range_func(None, [(0, _range_cap)])
+            if not _section:
+                print(f"✂️ Source is {'of unknown length' if not info.get('duration') else 'longer than the paid minutes'}"
                   f": downloading only the first {_range_cap / 60:.0f} min.")
         with yt_dlp.YoutubeDL(dl_opts) as ydl:
             if info.get('_type', 'video') == 'video' and info.get('formats'):
@@ -1332,6 +1359,12 @@ Technical Details: {str(last_err)}
         # Machine-parseable marker consumed by app.py's log reader for the
         # monthly proxy-bandwidth counter. Not shown to clients (log filter).
         print(f"PROXY_BYTES={paid_bytes}")
+    if _section and _dl_bytes.get("ranged") and os.path.exists(downloaded_file):
+        try:
+            with open(f"{downloaded_file}.range", "w") as f:
+                json.dump(_file_stamp(downloaded_file), f)
+        except OSError:
+            pass
     print(f"✅ Video downloaded in {time.time() - step_start_time:.2f}s: {downloaded_file}")
     return downloaded_file, sanitized_title
 

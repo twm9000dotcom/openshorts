@@ -482,6 +482,7 @@ def _apply_source_cut(env, partial):
     was billed: the user paid for "from 2:10 to 7:40", not for 5 minutes.
     """
     env.pop("SOURCE_START_SECONDS", None)
+    env.pop("SOURCE_RANGE_SECTION", None)
     if not partial or not partial.get("processed_minutes"):
         env.pop("MAX_SOURCE_MINUTES", None)
         return
@@ -490,6 +491,10 @@ def _apply_source_cut(env, partial):
         env["MAX_SOURCE_MINUTES"] = f"{(end - start) / 60.0:.4f}"
         if start > 0:
             env["SOURCE_START_SECONDS"] = f"{start:.3f}"
+        if not BILLING_ENABLED and partial.get("chosen"):
+            # Self-host: a URL source fetches only this section (main.py);
+            # ignored for uploads, which are cut locally.
+            env["SOURCE_RANGE_SECTION"] = "1"
     else:
         env["MAX_SOURCE_MINUTES"] = str(partial["processed_minutes"])
 
@@ -519,6 +524,29 @@ def _parse_source_range(start, end):
 
 # A stretch shorter than this cannot hold a few 15-60 s clips.
 MIN_RANGE_SECONDS = 60
+
+
+def _self_host_range(source_range):
+    """Self-host: the dashboard's start/end fields as a chosen-range partial
+    (the same shape the metered path builds), or None when none was sent."""
+    if not source_range:
+        return None
+    start_raw, end_raw = source_range
+    try:
+        start = float(start_raw) if start_raw not in (None, "") else 0.0
+        end = float(end_raw) if end_raw not in (None, "") else None
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="source_start / source_end must be seconds.")
+    if end is None:
+        raise HTTPException(status_code=400, detail="Give an end time for the part to clip.")
+    start = max(0.0, start)
+    if end - start < MIN_RANGE_SECONDS:
+        raise HTTPException(status_code=400, detail=(
+            f"Pick at least {MIN_RANGE_SECONDS} seconds of the video to clip."))
+    minutes = (end - start) / 60.0
+    return {"processed_minutes": round(minutes, 2), "total_minutes": None,
+            "start_seconds": round(start, 3), "end_seconds": round(end, 3),
+            "chosen": True}
 
 # URL probes made for the dashboard's cost line, reused by /api/process when
 # the user submits the same link: (owner, url) -> (monotonic, minutes).
@@ -6355,6 +6383,18 @@ async def process_endpoint(
         env["DOWNLOAD_SKIP_STATICS"] = "1"
     else:
         env.pop("DOWNLOAD_SKIP_STATICS", None)
+    if not BILLING_ENABLED and partial is None:
+        # Self-host range picker: no metering probe here, so the range must be
+        # explicit at both ends. A URL source downloads only that section
+        # (SOURCE_RANGE_SECTION, main.py) and is transcribed after the cut.
+        try:
+            partial = _self_host_range(_parse_source_range(source_start, source_end))
+        except HTTPException:
+            # A refused range leaves nothing behind (no empty job dir that
+            # would list as a failed project in History).
+            await asyncio.to_thread(_discard_rejected_source, input_path, job_output_dir,
+                                     upload_slot=upload_slot, upload_id=upload_id)
+            raise
     if partial:
         # main.py cuts the source down to this many minutes before anything
         # reads it, so the whole pipeline (and the editor) sees a short video.
