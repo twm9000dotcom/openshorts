@@ -19,3 +19,26 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu, video]
+
+  # Local LLM for the moment picker (LLM_BASE_URL in .env), so clip picking
+  # does not depend on the Gemini quota. Shares the GPU with the backend.
+  ollama:
+    image: ollama/ollama:0.12.6
+    container_name: openshorts-ollama
+    restart: unless-stopped
+    environment:
+      - OLLAMA_CONTEXT_LENGTH=16384
+      # Free the VRAM soon after a job's picks, before the next transcription.
+      - OLLAMA_KEEP_ALIVE=2m
+    volumes:
+      - ollama:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  ollama:
